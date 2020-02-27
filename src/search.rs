@@ -52,6 +52,7 @@ impl Search {
 pub struct Iter<'a> {
     jira: Jira,
     jql: String,
+    // NOTE: the issues in this are stored out of order to allow us to pop the results
     results: SearchResults,
     search_options: &'a SearchOptions,
 }
@@ -62,7 +63,8 @@ impl<'a> Iter<'a> {
         J: Into<String>,
     {
         let query = jql.into();
-        let results = jira.search().list(query.clone(), options)?;
+        let mut results = jira.search().list(query.clone(), options)?;
+        results.issues.reverse();
         Ok(Iter {
             jira: jira.clone(),
             jql: query,
@@ -92,6 +94,7 @@ impl<'a> Iterator for Iter<'a> {
                 ) {
                     Ok(new_results) => {
                         self.results = new_results;
+                        self.results.issues.reverse();
                         self.results.issues.pop()
                     }
                     _ => None,

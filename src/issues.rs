@@ -1,5 +1,7 @@
 //! Interfaces for accessing and managing issues
 
+use std::collections::BTreeMap;
+
 // Third party
 use url::form_urlencoded;
 
@@ -56,6 +58,11 @@ pub struct CreateIssue {
     pub fields: Fields,
 }
 
+#[derive(Serialize, Debug)]
+pub struct EditIssue {
+    pub fields: BTreeMap<String, ::serde_json::Value>,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct CreateResponse {
     pub id: String,
@@ -88,6 +95,12 @@ impl Issues {
     }
     pub fn create(&self, data: CreateIssue) -> Result<CreateResponse> {
         self.jira.post("api", "/issue", data)
+    }
+    pub fn edit<I>(&self, id: I, data: EditIssue) -> Result<()>
+    where
+        I: Into<String>,
+    {
+        self.jira.put("api", &format!("/issue/{}", id.into()), data)
     }
 
     /// returns a single page of issues results

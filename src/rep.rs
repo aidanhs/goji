@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use crate::{Jira, Result};
 
 /// represents an general jira error response
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct Errors {
     #[serde(rename = "errorMessages")]
     pub error_messages: Vec<String>,
@@ -17,16 +17,18 @@ pub struct Errors {
 }
 
 /// represents a single jira issue
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Issue {
     #[serde(rename = "self")]
     pub self_link: String,
     pub key: String,
     pub id: String,
     pub fields: BTreeMap<String, ::serde_json::Value>,
+    pub editmeta: Option<EditMeta>,
     pub changelog: Option<Changelog>,
 }
 
+// TODO: all of these should be option+result
 impl Issue {
     /// resolves a typed field from an issues lists of arbitrary fields
     pub fn field<F>(&self, name: &str) -> Option<Result<F>>
@@ -118,9 +120,18 @@ impl Issue {
             .and_then(|value| value.ok())
     }
 
+    pub fn parent(&self) -> Option<Result<Issue>> {
+        self.field::<Issue>("parent")
+    }
+
+    /// links to other issues
+    pub fn subtasks(&self) -> Option<Result<Vec<Issue>>> {
+        self.field::<Vec<Issue>>("subtasks")
+    }
+
     /// links to other issues
     pub fn links(&self) -> Option<Result<Vec<IssueLink>>> {
-        self.field::<Vec<IssueLink>>("issuelinks") //.and_then(|value| value.ok()).unwrap_or(vec![])
+        self.field::<Vec<IssueLink>>("issuelinks")
     }
 
     pub fn project(&self) -> Option<Project> {
@@ -139,11 +150,9 @@ impl Issue {
             .unwrap_or_default()
     }
 
-    pub fn comment(&self) -> Vec<Comment> {
+    pub fn comments(&self) -> Option<Result<Vec<Comment>>> {
         self.field::<Comments>("comment")
-            .and_then(|value| value.ok())
-            .map(|value| value.comments)
-            .unwrap_or_default()
+            .map(|value| value.map(|v| v.comments))
     }
 
     pub fn permalink(&self, jira: &Jira) -> String {
@@ -151,7 +160,7 @@ impl Issue {
     }
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct Attachment {
     pub id: String,
     #[serde(rename = "self")]
@@ -166,12 +175,12 @@ pub struct Attachment {
     pub thumbnail: Option<String>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct Comments {
     pub comments: Vec<Comment>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct Comment {
     pub id: Option<String>,
     #[serde(rename = "self")]
@@ -185,26 +194,82 @@ pub struct Comment {
     pub visibility: Option<Visibility>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct Visibility {
     #[serde(rename = "type")]
     pub visibility_type: String,
     pub value: String,
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct EditMeta {
+    pub fields: BTreeMap<String, EditMetaField>
+}
+
+fn nullvalue() -> ::serde_json::Value { ::serde_json::Value::Null }
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct EditMetaField {
+    pub required: bool,
+    pub schema: EditMetaSchema,
+    pub name: String,
+    pub key: String,
+    #[serde(rename = "autoCompleteUrl")]
+    pub auto_complete_url: Option<String>,
+    pub operations: Vec<String>,
+    #[serde(rename = "allowedValues")]
+    // TODO: YUCK, THIS IS AWFUL
+    #[serde(default)]
+    pub allowed_values: ::serde_json::Value,
+    //pub allowed_values: Option<Vec<::serde_json::Value>>,
+}
+
+//impl EditMetaField {
+//    pub fn allowed_values<T>(&self) -> Option<Result<Vec<T>>>
+//    where
+//        for<'de> T: Deserialize<'de>,
+//    {
+//        self.allowed_values.as_ref()
+//            .map(|av| av
+//                .iter()
+//                .map(|value| Ok(serde_json::value::from_value::<T>(value.clone())?))
+//                .collect()
+//            )
+//    }
+//}
+
+// Used for fields where you can select an option
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct FieldOption {
+    pub id: String,
+    pub value: String,
+    #[serde(rename = "self")]
+    pub self_link: String,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct EditMetaSchema {
+    #[serde(rename = "type")]
+    pub data_type: String,
+    pub items: Option<String>,
+    pub custom: Option<String>,
+    #[serde(rename = "customId")]
+    pub custom_id: Option<u64>,
+    pub system: Option<String>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Changelog {
     pub histories: Vec<History>,
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct History {
     pub author: User,
     pub created: String,
     pub items: Vec<HistoryItem>,
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct HistoryItem {
     pub field: String,
     pub from: Option<String>,
@@ -215,7 +280,7 @@ pub struct HistoryItem {
     pub to_string: Option<String>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct Project {
     pub id: String,
     pub key: String,
@@ -223,7 +288,7 @@ pub struct Project {
 }
 
 /// represents link relationship between issues
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct IssueLink {
     pub id: String,
     #[serde(rename = "self")]
@@ -237,7 +302,7 @@ pub struct IssueLink {
 }
 
 /// represents type of issue relation
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct LinkType {
     pub id: String,
     pub inward: String,
@@ -247,7 +312,7 @@ pub struct LinkType {
     pub self_link: String,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct Version {
     pub archived: bool,
     pub id: String,
@@ -257,7 +322,7 @@ pub struct Version {
     pub self_link: String,
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct User {
     pub active: bool,
     #[serde(rename = "avatarUrls")]
@@ -265,7 +330,7 @@ pub struct User {
     #[serde(rename = "displayName")]
     pub display_name: String,
     #[serde(rename = "emailAddress")]
-    pub email_address: String,
+    pub email_address: Option<String>,
     pub key: Option<String>,
     pub name: String,
     #[serde(rename = "self")]
@@ -274,7 +339,7 @@ pub struct User {
     pub timezone: Option<String>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct Status {
     pub description: String,
     #[serde(rename = "iconUrl")]
@@ -285,7 +350,7 @@ pub struct Status {
     pub self_link: String,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct Priority {
     pub icon_url: String,
     pub id: String,
@@ -294,7 +359,7 @@ pub struct Priority {
     pub self_link: String,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct IssueType {
     pub description: String,
     #[serde(rename = "iconUrl")]
@@ -306,7 +371,7 @@ pub struct IssueType {
     pub subtask: bool,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct SearchResults {
     pub total: u64,
     #[serde(rename = "maxResults")]
@@ -317,21 +382,21 @@ pub struct SearchResults {
     pub issues: Vec<Issue>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct TransitionOption {
     pub id: String,
     pub name: String,
     pub to: TransitionTo,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct TransitionTo {
     pub name: String,
     pub id: String,
 }
 
 /// contains list of options an issue can transitions through
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct TransitionOptions {
     pub transitions: Vec<TransitionOption>,
 }

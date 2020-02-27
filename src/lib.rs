@@ -25,7 +25,7 @@ mod transitions;
 
 pub use crate::builder::*;
 pub use crate::errors::*;
-pub use crate::issues::*;
+pub use crate::issues::Issues;
 pub use crate::rep::*;
 pub use crate::search::Search;
 pub use crate::transitions::*;
@@ -107,6 +107,16 @@ impl Jira {
     // return boards interface
     pub fn sprints(&self) -> Sprints {
         Sprints::new(self)
+    }
+
+    fn put<D, S>(&self, api_name: &str, endpoint: &str, body: S) -> Result<D>
+    where
+        D: DeserializeOwned,
+        S: Serialize,
+    {
+        let data = serde_json::to_string::<S>(&body)?;
+        debug!("Json request: {}", data);
+        self.request::<D>(Method::PUT, api_name, endpoint, Some(data.into_bytes()))
     }
 
     fn post<D, S>(&self, api_name: &str, endpoint: &str, body: S) -> Result<D>
